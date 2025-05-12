@@ -24,6 +24,7 @@ class Grammar:
     # IMPORTANTE: Dado que las alternativas se separan por espacios, y cada alternativa es una secuencia completa de símbolos,
     # hay que definir una convención explícita. 
     # La mejor opción para este input es usar | como separador entre alternativas, y no espacios, para evitar ambigüedad.
+    # Esta fue una dificultad en el input original, ya que no se especificó cómo separar las alternativas. Esto va en el LATEX.
 
     def load_from_file(self, path):
         with open(path, 'r') as file:
