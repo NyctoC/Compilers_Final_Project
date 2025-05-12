@@ -2,8 +2,8 @@
 
 ## Group Members
 
-* \Cristian Cárdenas
-* \Isabella Marquez
+* Cristian Cárdenas
+* Isabella Marquez
 
 ## Environment
 
