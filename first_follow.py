@@ -53,6 +53,9 @@ def compute_first(grammar):
         if not updated:
             break
     
+    print("FIRST sets computed:")
+    for nt, fset in first.items():
+        print(f"FIRST({nt}) = {fset}")
     return first
 
 def compute_follow(grammar, first):
@@ -117,6 +120,9 @@ def compute_follow(grammar, first):
         if not updated:
             break
     
+    print("FOLLOW sets computed:")
+    for nt, fset in follow.items():
+        print(f"FOLLOW({nt}) = {fset}")
     return follow
 
 def compute_first_of_string(first, string):
