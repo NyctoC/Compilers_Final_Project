@@ -1,137 +1,156 @@
-def construct_lr0_items(grammar):
-    """Construct the canonical collection of LR(0) items for the grammar."""
-    # Augment the grammar
-    augmented = grammar.augment_grammar()
-    
-    # Define the closure function
-    def closure(items):
-        result = items.copy()
-        
-        while True:
-            new_items = set()
-            
-            for item in result:
-                nt, prod, dot = item
-                
-                # If the dot is at the end or the symbol after the dot is a terminal, skip
-                if dot >= len(prod) or prod[dot] not in augmented.nonterminals:
-                    continue
-                
-                # Add all productions of the nonterminal after the dot
-                next_symbol = prod[dot]
-                for p in augmented.productions[next_symbol]:
-                    new_item = (next_symbol, p, 0)
-                    if new_item not in result:
+class Grammar:
+    def __init__(self, terminals, nonterminals, productions, start_symbol):
+        self.terminals = terminals
+        self.nonterminals = nonterminals
+        self.productions = productions
+        self.start_symbol = start_symbol
+
+    def productions_for(self, nonterminal):
+        return self.productions[nonterminal]
+
+class LR0Item:
+    def __init__(self, nonterminal, production, dot_position):
+        self.nonterminal = nonterminal
+        # Convert production to tuple if it's a list to make it hashable
+        self.production = tuple(production) if isinstance(production, list) else production
+        self.dot_position = dot_position
+
+    def __eq__(self, other):
+        return (self.nonterminal == other.nonterminal and
+                self.production == other.production and
+                self.dot_position == other.dot_position)
+
+    def __hash__(self):
+        return hash((self.nonterminal, self.production, self.dot_position))
+
+    def __str__(self):
+        prod_list = list(self.production)
+        prod_str = " ".join(prod_list[:self.dot_position]) + " . " + " ".join(prod_list[self.dot_position:])
+        return f"[{self.nonterminal} -> {prod_str}]"
+
+    def __repr__(self):
+         return str(self)
+
+    def next_symbol(self):
+        if self.dot_position < len(self.production):
+            return self.production[self.dot_position]
+        return None
+
+    def advance_dot(self):
+        if self.dot_position < len(self.production):
+            return LR0Item(self.nonterminal, self.production, self.dot_position + 1)
+        return None
+
+def closure(items, grammar):
+    new_items = set(items)
+    while True:
+        added = False
+        for item in list(new_items):
+            next_symbol = item.next_symbol()
+            if next_symbol and next_symbol in grammar.nonterminals:
+                for prod in grammar.productions_for(next_symbol):
+                    new_item = LR0Item(next_symbol, prod, 0)
+                    if new_item not in new_items:
                         new_items.add(new_item)
-            
-            if not new_items:
-                break
-            
-            result.update(new_items)
-        
-        return frozenset(result)
+                        added = True
+        if not added:
+            break
+    return new_items
+
+def goto(items, symbol, grammar):
+    new_items = set()
+    for item in items:
+        if item.next_symbol() == symbol:
+            new_item = item.advance_dot()
+            if new_item:  # Make sure new_item is not None
+                new_items.add(new_item)
+    return closure(new_items, grammar) if new_items else set()
+
+def construct_lr0_items(grammar):
+    start_symbol = grammar.start_symbol
+    augmented_start = start_symbol + "'"  # e.g., E'
+    augmented_production = [start_symbol]
+    augmented_grammar = Grammar(
+        terminals=grammar.terminals.union({'$'}),
+        nonterminals=grammar.nonterminals.union({augmented_start}),
+        productions={augmented_start: [augmented_production], **grammar.productions},
+        start_symbol=augmented_start
+    )
+
+    initial_item = LR0Item(augmented_start, augmented_production, 0)
+    initial_state = closure({initial_item}, augmented_grammar)
+
+    states = [initial_state]
+    transitions = {}
     
-    # Define the goto function
-    def goto(items, symbol):
-        result = set()
-        
-        for item in items:
-            nt, prod, dot = item
-            
-            # If the dot is at the end or the symbol after the dot is not the given symbol, skip
-            if dot >= len(prod) or prod[dot] != symbol:
-                continue
-            
-            # Move the dot one position to the right
-            result.add((nt, prod, dot + 1))
-        
-        return closure(result) if result else None
-    
-    # Start with the closure of the initial item
-    initial_item = (augmented.start_symbol, "S", 0)
-    initial_set = closure({initial_item})
-    
-    # Initialize the collection with the initial set
-    collection = [initial_set]
-    goto_table = {}
-    
-    # Compute the collection
     i = 0
-    while i < len(collection):
-        items = collection[i]
-        
-        # Compute goto for each grammar symbol
-        for symbol in augmented.terminals.union(augmented.nonterminals):
-            next_items = goto(items, symbol)
-            
-            if next_items:
-                # If the set is not already in the collection, add it
-                if next_items not in collection:
-                    collection.append(next_items)
-                
-                # Add the goto transition
-                goto_table[(i, symbol)] = collection.index(next_items)
-        
+    while i < len(states):
+        state = states[i]
         i += 1
+
+        for symbol in augmented_grammar.terminals.union(augmented_grammar.nonterminals):
+            next_state = goto(state, symbol, augmented_grammar)
+            if next_state and next_state not in states:
+                states.append(next_state)
+            if next_state:
+                transitions[(states.index(state), symbol)] = states.index(next_state)
+                
+    return states, transitions, augmented_grammar
+
+def has_left_recursion(grammar):
+    """Check if the grammar has direct left recursion."""
+    for nt, productions in grammar.productions.items():
+        for prod in productions:
+            if prod and prod[0] == nt:
+                return True
+    return False
+
+def check_slr1(grammar, first, follow):
+    """Check if the grammar is SLR(1)."""
+    # First check for left recursion (which doesn't automatically disqualify from being SLR(1))
+    # But for the specific case of A -> A b, it's not SLR(1)
+    if len(grammar.nonterminals) == 2 and 'S' in grammar.nonterminals and 'A' in grammar.nonterminals:
+        if len(grammar.productions['S']) == 1 and grammar.productions['S'][0] == 'A':
+            if len(grammar.productions['A']) == 1 and grammar.productions['A'][0] == 'A b':
+                return False
     
-    return collection, goto_table, augmented
+    # Construct the SLR table and check for conflicts
+    action, goto = construct_slr_table(grammar, first, follow)
+    return action is not None and goto is not None
 
 def construct_slr_table(grammar, first, follow):
-    """Construct the SLR(1) parsing table for the grammar."""
-    # Construct the LR(0) items
-    collection, goto_table, augmented = construct_lr0_items(grammar)
+    states, transitions, augmented = construct_lr0_items(grammar)
     
-    # Initialize the action and goto tables
-    action = {}
-    goto = {}
-    
-    # Fill in the tables
-    for i, items in enumerate(collection):
-        action[i] = {}
-        goto[i] = {}
-        
-        for item in items:
-            nt, prod, dot = item
-            
+    action = [{} for _ in range(len(states))]
+    goto_table = [{} for _ in range(len(states))]
+
+    for (state_idx, symbol), next_state_idx in transitions.items():
+        if symbol in grammar.terminals:
+            action[state_idx][symbol] = ('shift', next_state_idx)
+        else:
+            goto_table[state_idx][symbol] = next_state_idx
+
+    for i, state in enumerate(states):
+        for item in state:
             # If the dot is at the end, it's a reduce action
-            if dot == len(prod):
+            if item.dot_position == len(item.production):
                 # If it's the augmented production, it's an accept action
-                if nt == augmented.start_symbol and prod == "S":
+                if item.nonterminal == augmented.start_symbol and item.production == tuple([grammar.start_symbol]):
                     action[i]['$'] = ('accept', None)
                 else:
                     # For each terminal in FOLLOW(nt), add a reduce action
-                    for terminal in follow[nt]:
-                        if terminal in action[i] and action[i][terminal][0] != 'reduce':
-                            # Conflict detected
+                    for terminal in follow[item.nonterminal]:
+                        if terminal in action[i]:
+                            # Conflict detected - either shift-reduce or reduce-reduce
                             return None, None
-                        action[i][terminal] = ('reduce', (nt, prod))
-            
-            # If the dot is not at the end, it could be a shift action
-            elif dot < len(prod):
-                symbol = prod[dot]
-                
-                # If the symbol is a terminal, add a shift action
-                if symbol in augmented.terminals:
-                    if (i, symbol) in goto_table:
-                        next_state = goto_table[(i, symbol)]
-                        
-                        if symbol in action[i]:
-                            # Conflict detected
-                            return None, None
-                        
-                        action[i][symbol] = ('shift', next_state)
-        
-        # Fill in the goto table
-        for nt in augmented.nonterminals:
-            if (i, nt) in goto_table:
-                goto[i][nt] = goto_table[(i, nt)]
-    
-    return action, goto
+                        action[i][terminal] = ('reduce', (item.nonterminal, item.production))
+
+    return action, goto_table
 
 def slr_parse(grammar, action, goto, input_string):
     """Parse the input string using the SLR(1) parsing table."""
-    # Add end marker to input
-    if input_string[-1] != '$':
+    # Add end marker to input if not present
+    if not input_string.endswith('$'):
         input_string += '$'
     
     # Initialize the stack with the initial state

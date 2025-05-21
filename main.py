@@ -1,7 +1,7 @@
 from grammar import Grammar
 from first_follow import compute_first, compute_follow
 from ll_parser import construct_ll_table, ll_parse
-from slr_parser import construct_slr_table, slr_parse
+from slr_parser import construct_slr_table, slr_parse, check_slr1
 
 def parse_grammar():
     """Parse the grammar from standard input."""
@@ -24,14 +24,17 @@ def main():
     first = compute_first(grammar)
     follow = compute_follow(grammar, first)
     
-    # Construct the LL(1) and SLR(1) parsing tables
+    # Construct the LL(1) parsing table
     ll_table = construct_ll_table(grammar, first, follow)
+    
+    # Check if the grammar is SLR(1)
+    is_ll1 = ll_table is not None
+    is_slr1 = check_slr1(grammar, first, follow)
+    
+    # Construct the SLR(1) parsing tables
     slr_action, slr_goto = construct_slr_table(grammar, first, follow)
     
     # Determine the type of grammar
-    is_ll1 = ll_table is not None
-    is_slr1 = slr_action is not None and slr_goto is not None
-    
     if is_ll1 and is_slr1:
         print("Select a parser (T: for LL(1), B: for SLR(1), Q: quit):")
         while True:
